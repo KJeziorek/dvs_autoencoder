@@ -31,43 +31,64 @@ timestamps_dir = f'test_images/{dataset}/images/timestamps.txt'
 
 data_reader = EventReader()
 
-batch_s = 128
-model = AutoEncoderGRU(input_size=1, hidden_size=3, batch_size=batch_s, activation=nn.Sigmoid())
+batch_size = 128
+model = AutoEncoderGRU(input_size=1, hidden_size=10, batch_size=batch_size)
+model_optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 # Parameters
 with h5py.File(str(events_dir), 'r') as h5f:
     t_offset = h5f['t_offset'][()]
     timestamps = np.loadtxt(timestamps_dir)
     t_start = timestamps[0]
-    t_end = timestamps[1]
-    events = data_reader.extract_timewindow(h5f, t_start, t_end + (t_end-t_start)*5)
+    t_end = t_start + 0.05 * 1e6 # Timewindow equal to 0.05 s
 
-    ex, ey, et, ep = np.float32(events['x']), np.float32(events['y']), np.float32(events['t']), np.float32(events['p'])
-    et -= et[0]
-    et /= et[-1]
-    et[ep==0] *= -1
-    
-    events = np.column_stack([ex, ey, et, ep])
+    iter = 1
+    while t_end < timestamps[-1]:
+        events = data_reader.extract_timewindow(h5f, t_start, t_end)
 
-    seq_lengths = []
-    seq = []
-
-    batch_idx = 0
-    for idx in range(640*480):
-        idx_x, idx_y = idx%640 , idx//640
-        vec = (events[:,0] == idx_x) & (events[:,1] == idx_y)
-        event_window = torch.tensor(et[vec])
-
-        if len(event_window) > 0:
-            seq.append(event_window.view(-1, 1))
-            seq_lengths.append(len(event_window))
-            batch_idx += 1
-        else:
-            continue
+        ex, ey, et, ep = np.float32(events['x']), np.float32(events['y']), np.float32(events['t']), np.float32(events['p'])
+        et -= et[0]
+        et /= et[-1]
+        et[ep==0] *= 1 # If -1 add polarity
         
-        if batch_idx == batch_s:
-            loss, input, output = model(seq, seq_lengths)
-            batch_idx = 0
-            seq_lengths = []
-            seq = []
-    
+        events = np.column_stack([ex, ey, et, ep])
+
+        batch_idx = 0
+        seq_lengths = []
+        seq = []
+        loss_sum = 0
+        loss_iter = 0
+        for idx in tqdm(range(640*48)):
+            idx_x, idx_y = idx%640 , idx//640
+            idx_xy = (events[:,0] == idx_x) & (events[:,1] == idx_y)
+            event_window = torch.tensor(et[idx_xy])
+
+            if len(event_window) > 0:
+                seq.append(event_window.view(-1, 1))
+                seq_lengths.append(len(event_window))
+                batch_idx += 1
+            else:
+                continue
+            
+            if batch_idx == batch_size:
+                loss, input, output, features = model(seq, seq_lengths)
+                model_optimizer.zero_grad()
+                loss.backward()
+                model_optimizer.step()
+                loss_sum += loss
+                loss_iter += 1
+                model.reset_state()
+                batch_idx = 0
+                seq_lengths = []
+                seq = []
+        
+        
+        print('Loss for image = ', loss_sum/loss_iter)
+        print('Input:')
+        print(input[0])
+        print('Output:')
+        print(output[0])
+
+        t_start = timestamps[iter]
+        t_end = t_start + 0.05 * 1e6
+        iter += 1
