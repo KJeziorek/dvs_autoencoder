@@ -1,4 +1,4 @@
-from extractor import EventReader
+from utils.extractor import EventReader
 from model import AutoEncoderGRU
 
 from time import time
@@ -31,7 +31,7 @@ timestamps_dir = f'test_images/{dataset}/images/timestamps.txt'
 
 data_reader = EventReader()
 
-batch_s = 4
+batch_s = 128
 model = AutoEncoderGRU(input_size=1, hidden_size=3, batch_size=batch_s, activation=nn.Sigmoid())
 
 # Parameters
@@ -66,12 +66,8 @@ with h5py.File(str(events_dir), 'r') as h5f:
             continue
         
         if batch_idx == batch_s:
-            features = model(seq, seq_lengths)
-            print(features)
+            loss, input, output = model(seq, seq_lengths)
             batch_idx = 0
             seq_lengths = []
             seq = []
-
-            break
-
     
