@@ -12,7 +12,8 @@ Extract test_images.zip to images folder.
 >> conda create -n dvs_enc python=3.9
 >> conda activate dvs_enc
 >> conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
->> conda install h5py
+>> conda install h5py 
+>> conda install -c conda-forge blosc-hdf5-plugin
 >> pip install matplotlib tqdm
 ```
 
