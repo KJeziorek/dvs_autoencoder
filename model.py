@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np 
+import os
 
 class AutoEncoderGRU(nn.Module):
     def __init__(self, input_size=1, hidden_size=3, batch_size=128):
@@ -22,20 +23,20 @@ class AutoEncoderGRU(nn.Module):
         self.random = False             # Random hidden state reset -> if False hidden state = 0
         self.reset_state()
 
-    def forward(self, x, seq_lengths):
-        features, input = self._encoder_forward(x, seq_lengths)
+    def forward(self, input, seq_lengths):
+        features = self._encoder_forward(input, seq_lengths)
         output = self._decoder_forward(features, seq_lengths)
+
         loss = self._loss_fun(input, output, seq_lengths)
 
         return loss, input, output, features
     
-    def _encoder_forward(self, x, seq_lengths):
-        padded = nn.utils.rnn.pad_sequence(x, batch_first=True)    #Padd tensors with 0's
+    def _encoder_forward(self, padded, seq_lengths):
         packed = nn.utils.rnn.pack_padded_sequence(padded, seq_lengths, batch_first=True, enforce_sorted=False)
         
         _, self.hidden_state = self.encoder(packed, self.hidden_state)
         features = self.activation(self.hidden_state)
-        return self.hidden_state, padded
+        return features
     
     def _decoder_forward(self, features, seq_lengths):
         output_vec = []
@@ -64,6 +65,7 @@ class AutoEncoderGRU(nn.Module):
             self.hidden_state = torch.zeros(1, self.batch_size, self.hidden_size)
 
     def save_models(self):
+        os.makedirs('models', exist_ok=True)
         torch.save(self.encoder.state_dict(), 'models/encoder.pth')
         torch.save(self.decoder.state_dict(), 'models/decoder.pth')
 
