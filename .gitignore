@@ -20,5 +20,5 @@ var/
 
 /events
 /images
-/models
+/trained_models
 /preprocessed
