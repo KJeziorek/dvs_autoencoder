@@ -22,3 +22,15 @@ Extract test_images.zip to images folder.
 python preproces.py
 python train.py
 ```
+
+Data and code to extract from
+
+```bibtex
+@InProceedings{Gehrig21ral,
+  author  = {Mathias Gehrig and Willem Aarents and Daniel Gehrig and Davide Scaramuzza},
+  title   = {{DSEC}: A Stereo Event Camera Dataset for Driving Scenarios},
+  journal = {{IEEE} Robotics and Automation Letters},
+  year    = {2021},
+  doi     = {10.1109/LRA.2021.3068942}
+}
+```
