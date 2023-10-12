@@ -17,9 +17,9 @@ torch.cuda.manual_seed(SEED)
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batch_size", default=320*240, type=int) # Based on how many pixels we want to process at ones
-    parser.add_argument("--lim_train", default=100, type=int) # Number of training samples of size equal to "batch_size"
-    parser.add_argument("--lim_test", default=20, type=int) # Number of testing samples of size equal to "batch_size"
+    parser.add_argument("--batch_size", default=160*120, type=int) # Based on how many pixels we want to process at ones
+    parser.add_argument("--lim_train", default=10, type=int) # Number of training samples of size equal to "batch_size"
+    parser.add_argument("--lim_test", default=2, type=int) # Number of testing samples of size equal to "batch_size"
     # TODO
     # add arguments to select % of data to split betwen train and test for each file
     return parser.parse_args()
@@ -57,16 +57,34 @@ def main(args):
                 events = data_reader.extract_timewindow(h5f, t_start, t_end)
 
                 ex, ey, et, ep = np.float32(events['x']), np.float32(events['y']), np.float32(events['t']), np.float32(events['p'])
-                et = (et - et[0]) * (1 / et[-1])     # Time normalization
-                et[ep==0] *= -1                      # Change time based on polarity
+                # Time normalization
+                et -= et[0]
+                et /= et[-1]
+                # Change time based on polarity
+                et[ep==0] *= -1                      
                 
-                events = np.column_stack([ex, ey, et, ep])
+                events = np.column_stack([ex, ey, et])
 
-                seq = []
-                seq_lengths = []
+                seq = [[] for _ in range(640*480)]
+                seq_lengths = np.zeros(640*480, dtype=np.int64)
                 
+                idx_xy = (events[:,0] == 130) & (events[:,1] == 274)
+                print(et[idx_xy])
+
+                for event in events:
+                    idx = event[0] + event[1] * 640
+                    seq[int(idx)].append(event[2])
+                    seq_lengths[int(idx)] += 1
+
                 for idx in range(640*480):
-                    # Split data to train and test sets
+                    if not seq[idx]:
+                        seq[idx].append(np.float32(0))
+                        seq_lengths[idx] += 1
+                    
+                    seq[idx] = torch.tensor(np.array(seq[idx])).view(-1, 1)
+                
+                for idx in range((640*480)//args.batch_size):
+
                     if file_idx < args.lim_train:
                         mode = 'train'
                     elif file_idx < args.lim_train + args.lim_test:
@@ -74,32 +92,15 @@ def main(args):
                     else:
                         exit()
 
-                    # Find events for one pixel and create tensor
-                    idx_x, idx_y = idx%640 , idx//640
-                    idx_xy = (events[:,0] == idx_x) & (events[:,1] == idx_y)
-                    event_window = torch.tensor(et[idx_xy])
+                    start_idx, end_idx = idx*args.batch_size, (idx+1)*args.batch_size
+                    padded = nn.utils.rnn.pad_sequence(seq[start_idx:end_idx], batch_first=True)
 
-                    if len(event_window) > 0:
-                        # If there is at least one event for pixel (idx_x, idx_y)
-                        seq.append(event_window.view(-1, 1))
-                        seq_lengths.append(len(event_window))
-                    else:
-                        # If there is not events for pixel (idx_x, idx_y)
-                        seq.append(torch.tensor([[np.float32(0)]]))
-                        seq_lengths.append(1)
+                    torch.save(padded, f'preprocessed/{mode}/{data}_{file_idx}')
+                    torch.save(seq_lengths[start_idx:end_idx], f'preprocessed/{mode}_lengths/{data}_{file_idx}_lengths')
 
-                    if len(seq_lengths) == args.batch_size:
-                        # If we have batch_size number of tensors
-                        # Padding so that each tensor has the same lenght - used for packing_padded_tensor later
+                    file_idx += 1
 
-                        padded = nn.utils.rnn.pad_sequence(seq, batch_first=True)    #Padd tensors with 0's
-                        
-                        torch.save(padded, f'preprocessed/{mode}/{data}_{file_idx}')
-                        torch.save(seq_lengths, f'preprocessed/{mode}_lengths/{data}_{file_idx}_lengths')
-                    
-                        seq = []
-                        seq_lengths = []
-                        file_idx += 1
+
 
 if __name__ == '__main__':
     args = parse_args()

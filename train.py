@@ -21,7 +21,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batch_size", default=320*240, type=int) # Based on how many pixels we want to process at ones
+    parser.add_argument("--batch_size", default=160*120, type=int) # Based on how many pixels we want to process at ones
     parser.add_argument("--lr", default=0.001, type=float) # Learning rate parameter
     parser.add_argument("--epochs", default=500, type=int) # Epochs over all training and testing preprocessed dataset
     parser.add_argument("--model", default='gru', type=str)
@@ -84,7 +84,7 @@ def main(args):
 
                 # Visualization
                 img = features.cpu().detach().numpy()
-                img = img.reshape(240, 320, 3)
+                img = img.reshape(480 // ((640*480)//args.batch_size), 640, 3)
                 img = cv2.normalize(img, None, 0, 1.0, cv2.NORM_MINMAX, dtype=cv2.CV_32F)
                 scale_percent = 300 # percent of original size
                 width = int(img.shape[1] * scale_percent / 100)
