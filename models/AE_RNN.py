@@ -3,9 +3,9 @@ import torch.nn as nn
 import numpy as np 
 import os
 
-class AutoEncoderLSTM(nn.Module):
+class AutoEncoderRNN(nn.Module):
     def __init__(self, input_size, hidden_size, batch_size, device):
-        super(AutoEncoderLSTM, self).__init__()
+        super(AutoEncoderRNN, self).__init__()
 
         self.device = device
         self.batch_size = batch_size
@@ -22,12 +22,12 @@ class AutoEncoderLSTM(nn.Module):
         self.encoder.reset_state(random=False)
 
     def forward(self, input, seq_lengths):
-        h, c = self.encoder(input, seq_lengths)
-        output = self.decoder(h, c, seq_lengths)
+        features = self.encoder(input, seq_lengths)
+        output = self.decoder(features, seq_lengths)
 
         loss = self._loss_fun(input, output, seq_lengths)
 
-        return loss, input, output, h
+        return loss, input, output, features
 
     def _loss_fun(self, input, output, seq_lengths):
         mask = torch.arange(max(seq_lengths))[None, :] < torch.tensor(seq_lengths)[:, None]
@@ -39,8 +39,11 @@ class AutoEncoderLSTM(nn.Module):
     
     def save_models(self):
         os.makedirs('trained_models', exist_ok=True)
-        torch.save(self.encoder.state_dict(), 'trained_models/encoder_lstm.pth')
-        torch.save(self.decoder.state_dict(), 'trained_models/decoder_lstm.pth')
+        torch.save(self.encoder.state_dict(), 'trained_models/encoder_gru.pth')
+        torch.save(self.decoder.state_dict(), 'trained_models/decoder_gru.pth')
+
+    def reset_state(self):
+        self.encoder.reset_state(random=False)
 
 ###################################################################
 ############################# ENCODER #############################
@@ -55,7 +58,7 @@ class Encoder(nn.Module):
         self.batch_size = batch_size
 
         self.device = device
-        self.encoder = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size, batch_first=True)
+        self.encoder = nn.RNN(input_size=self.input_size, hidden_size=self.hidden_size, batch_first=True)
 
         self.activation = nn.Sigmoid()  
 
@@ -71,23 +74,21 @@ class Encoder(nn.Module):
     def forward(self,padded,  seq_lengths):
         packed = nn.utils.rnn.pack_padded_sequence(padded, seq_lengths, batch_first=True, enforce_sorted=False).to(self.device)
         
-        _, (h, c) = self.encoder(packed, self.hidden_state)
+        _, features = self.encoder(packed, self.hidden_state)
 
         if self.use_linear:
-            h = self.linear_enc(h)
+            features = self.linear_enc(features)
 
         if self.use_activation:
-            h = self.activation(h)
+            features = self.activation(features)
 
-        return h, c
+        return features
     
-    def reset_state(self, random):
+    def reset_state(self, random=False):
         if random:
             self.hidden_state = torch.rand(1, self.batch_size, self.hidden_size).to(self.device)
-            self.cell_state = torch.rand(1, self.batch_size, self.hidden_size).to(self.device)
         else:
             self.hidden_state = torch.zeros(1, self.batch_size, self.hidden_size).to(self.device)
-            self.cell_state = torch.zeros(1, self.batch_size, self.hidden_size).to(self.device)
 
 ###################################################################
 ############################# DECODER #############################
@@ -102,10 +103,9 @@ class Decoder(nn.Module):
         self.output_size = input_size 
 
         self.batch_size = batch_size
-
         self.device = device
 
-        self.decoder = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size, batch_first=False)
+        self.decoder = nn.RNN(input_size=self.input_size, hidden_size=self.hidden_size, batch_first=False)
         self.linear_out = nn.Linear(self.hidden_size, self.output_size)
 
         self.activation = nn.Sigmoid()  
@@ -115,15 +115,15 @@ class Decoder(nn.Module):
             self.use_linear = True
             self.linear_dec = nn.Linear(in_features=3, out_features=hidden_size)
 
-    def forward(self, h, c, seq_lengths):
+    def forward(self, features, seq_lengths):
         output_vec = []
         x = torch.zeros(1, self.batch_size, 1).to(self.device)
 
         if self.use_linear:
-            h = self.linear_dec(h)
+            features = self.linear_dec(features)
 
         for _ in range(max(seq_lengths)):
-            x, (h, c) = self.decoder(x, (h, c))
+            x, features = self.decoder(x, features)
             x = self.linear_out(x)
             output_vec.append(x)
 
@@ -144,7 +144,7 @@ class Encoder(nn.Module):
         self.batch_size = batch_size
 
         self.device = device
-        self.encoder = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size, batch_first=True)
+        self.encoder = nn.RNN(input_size=self.input_size, hidden_size=self.hidden_size, batch_first=True)
 
         self.activation = nn.Sigmoid()  
 

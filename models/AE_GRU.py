@@ -129,3 +129,40 @@ class Decoder(nn.Module):
 
         output_vec = torch.cat(output_vec, dim=0)
         return output_vec.transpose(1, 0)
+    
+###################################################################
+######################### ENCODER TESTING #########################
+###################################################################
+class Encoder(nn.Module):
+    def __init__(self, input_size, hidden_size, batch_size, device):
+        super(Encoder, self).__init__()
+
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.batch_size = batch_size
+
+        self.device = device
+        self.encoder = nn.GRU(input_size=self.input_size, hidden_size=self.hidden_size, batch_first=True)
+
+        self.activation = nn.Sigmoid()  
+
+        self.random = False  
+        self.use_activation = True
+
+        if hidden_size > 3:
+            self.use_linear = True
+            self.linear_enc = nn.Linear(in_features=hidden_size, out_features=3)
+        else:
+            self.use_linear = False
+
+    def forward(self, x,  hidden_state):
+        
+        _, features = self.encoder(x, hidden_state)
+
+        if self.use_linear:
+            features = self.linear_enc(features)
+
+        if self.use_activation:
+            features = self.activation(features)
+
+        return features
