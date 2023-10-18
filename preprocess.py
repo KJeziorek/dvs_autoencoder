@@ -18,8 +18,8 @@ torch.cuda.manual_seed(SEED)
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", default=160*120, type=int) # Based on how many pixels we want to process at ones
-    parser.add_argument("--lim_train", default=10, type=int) # Number of training samples of size equal to "batch_size"
-    parser.add_argument("--lim_test", default=2, type=int) # Number of testing samples of size equal to "batch_size"
+    parser.add_argument("--lim_train", default=100, type=int) # Number of training samples of size equal to "batch_size"
+    parser.add_argument("--lim_test", default=20, type=int) # Number of testing samples of size equal to "batch_size"
     # TODO
     # add arguments to select % of data to split betwen train and test for each file
     return parser.parse_args()
@@ -43,6 +43,10 @@ def main(args):
 
     file_idx = 0
 
+    seq_to_save = []
+    seq_lengths_to_save = []
+    batch_idx = 0
+
     for data in datasets:
         events_dir = f'events/{data}/events/left/events.h5'
         timestamps_dir = f'images/{data}/images/timestamps.txt'
@@ -61,44 +65,44 @@ def main(args):
                 et -= et[0]
                 et /= et[-1]
                 # Change time based on polarity
-                et[ep==0] *= -1                      
+                et[ep==0] *= 1                      
                 
                 events = np.column_stack([ex, ey, et])
 
                 seq = [[] for _ in range(640*480)]
                 seq_lengths = np.zeros(640*480, dtype=np.int64)
-                
-                idx_xy = (events[:,0] == 130) & (events[:,1] == 274)
-                print(et[idx_xy])
 
                 for event in events:
-                    idx = event[0] + event[1] * 640
-                    seq[int(idx)].append(event[2])
-                    seq_lengths[int(idx)] += 1
+                    _idx = event[0] + event[1] * 640
+                    seq[int(_idx)].append(event[2])
+                    seq_lengths[int(_idx)] += 1
 
                 for idx in range(640*480):
-                    if not seq[idx]:
-                        seq[idx].append(np.float32(0))
-                        seq_lengths[idx] += 1
-                    
-                    seq[idx] = torch.tensor(np.array(seq[idx])).view(-1, 1)
-                
-                for idx in range((640*480)//args.batch_size):
+                    if seq_lengths[idx] > 0:
+                        seq_to_save.append(torch.tensor(np.array(seq[idx])).view(-1, 1))
+                        seq_lengths_to_save.append(seq_lengths[idx])
 
-                    if file_idx < args.lim_train:
-                        mode = 'train'
-                    elif file_idx < args.lim_train + args.lim_test:
-                        mode = 'test'
-                    else:
-                        exit()
+                        batch_idx += 1
 
-                    start_idx, end_idx = idx*args.batch_size, (idx+1)*args.batch_size
-                    padded = nn.utils.rnn.pad_sequence(seq[start_idx:end_idx], batch_first=True)
+                        if batch_idx == args.batch_size:
+                        
+                            if file_idx < args.lim_train:
+                                mode = 'train'
+                            elif file_idx < args.lim_train + args.lim_test:
+                                mode = 'test'
+                            else:
+                                exit()
 
-                    torch.save(padded, f'preprocessed/{mode}/{data}_{file_idx}')
-                    torch.save(seq_lengths[start_idx:end_idx], f'preprocessed/{mode}_lengths/{data}_{file_idx}_lengths')
+                            padded = nn.utils.rnn.pad_sequence(seq_to_save, batch_first=True)
+                            
+                            torch.save(padded, f'preprocessed/{mode}/{data}_{file_idx}')
+                            torch.save(seq_lengths_to_save, f'preprocessed/{mode}_lengths/{data}_{file_idx}_lengths')
 
-                    file_idx += 1
+                            file_idx += 1
+                            batch_idx = 0
+
+                            seq_to_save = []
+                            seq_lengths_to_save = []
 
 
 
