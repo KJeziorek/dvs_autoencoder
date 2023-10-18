@@ -1,4 +1,4 @@
-from models.AE_GRU import EncoderTest
+from models.Encoder import EncoderEvent
 from utils.extractor import EventReader
 
 from time import time
@@ -24,14 +24,24 @@ datasets = ['zurich_city_14_c', 'interlaken_00_a', 'interlaken_00_b', 'interlake
                 'thun_01_b', 'zurich_city_12_a', 'zurich_city_13_a', 'zurich_city_13_b', 'zurich_city_14_a', 
                 'zurich_city_14_b', 'zurich_city_14_c', 'zurich_city_15_a']
 
-# Reader class
-data_reader = EventReader()
-encoder = EncoderTest(1, 3, device)
-encoder.load_state_dict(torch.load('trained_models/encoder_gru.pth'))
-encoder.eval().to(device)
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", default='gru', type=str)
+    return parser.parse_args()
 
-x = torch.load('trained_models/encoder_gru.pth')
-def main():
+def main(args):
+
+    data_reader = EventReader()
+
+    encoder = EncoderEvent(input_size=1,
+                    hidden_size=3,
+                    model=args.model,
+                    use_activation=False,
+                    use_linear=False,
+                    device=device)
+
+    encoder.eval().to(device)
+
     idx = 0
     for data in datasets:
         events_dir = f'events/{data}/events/left/events.h5'
@@ -52,10 +62,10 @@ def main():
                 # Change time based on polarity
                 et[ep==0] *= 1                      
                 
-                print(len(et))
                 events = np.column_stack([ex, ey, et])
                 
                 events = torch.tensor(events).to(device)
+                
                 features = torch.ones(480, 640, 3).to(device)
 
                 for event in events:
@@ -70,4 +80,5 @@ def main():
                     exit()
 
 if __name__ == '__main__':
-    main()
+    args = parse_args()
+    main(args)
