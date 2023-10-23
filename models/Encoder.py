@@ -4,7 +4,7 @@ import numpy as np
 import os
 
 class EncoderEvent(nn.Module):
-    def __init__(self, input_size, hidden_size, model, use_linear, use_activation, device):
+    def __init__(self, input_size, hidden_size, model, use_linear, use_activation, device, dataset):
         super(EncoderEvent, self).__init__()
 
         self.device = device
@@ -23,7 +23,7 @@ class EncoderEvent(nn.Module):
                                use_activation=self.use_activation,
                                device=self.device).to(self.device)
         
-        self.encoder.load_state_dict(torch.load(f'trained_models/encoder_{model}.pth'))
+        self.encoder.load_state_dict(torch.load(f'trained_models/encoder_{model}_{dataset}.pth'))
 
     def forward(self, input, hidden_state):
         features = self.encoder(input, hidden_state)

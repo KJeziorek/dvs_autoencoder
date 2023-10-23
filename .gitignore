@@ -18,6 +18,5 @@ var/
 .installed.cfg
 *.egg
 
-/events
-/images
+/data
 /preprocessed

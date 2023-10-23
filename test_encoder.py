@@ -1,17 +1,19 @@
-from models.AE_batch import AutoEncoderBatch
+from models.Encoder import EncoderEvent
 
 from utils.extractor_dsec import DSECReader
 from utils.extractor_gen1 import Gen1Reader
 
+from time import time
+from tqdm import tqdm
+
+import argparse
+import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import argparse
 import glob
 import os
-
-from tqdm import tqdm
-import h5py
+import cv2
 
 SEED = 12345
 
@@ -30,7 +32,6 @@ def parse_args():
     return parser.parse_args()
 
 def main(args):
-
     # Get data files names
     if args.dataset == 'gen1':
         dataset = glob.glob('data/gen1/*.h5')
@@ -45,19 +46,16 @@ def main(args):
         ValueError('Dataset not supported')
 
     # Model
-    model = AutoEncoderBatch(input_size=1,
-                             hidden_size=3,
-                             batch_size=1,
-                             model=args.model,
-                             use_activation=True,
-                             use_linear=False,
-                             device=device,
-                             load_model=True,
-                             dataset=args.dataset)
-    
-    model.eval().to(device)
+    encoder = EncoderEvent(input_size=1,
+                    hidden_size=3,
+                    model=args.model,
+                    use_activation=False,
+                    use_linear=False,
+                    device=device,
+                    dataset=args.dataset)
 
-    #inverse loop
+    encoder.eval().to(device)
+
     for data in reversed(dataset):
 
         if args.dataset == 'dsec':
@@ -78,35 +76,28 @@ def main(args):
 
             # Time normalization
             et -= et[0]
-            et /= et[-1]                       
+            et /= et[-1]                    
                 
             events = np.column_stack([ex, ey, et])
-
-            seq = [[] for _ in range(dim[0]*dim[1])]
-            seq_lengths = np.zeros(dim[0]*dim[1], dtype=np.int64)
+            events = torch.tensor(events).to(device)
+            
+            features = torch.zeros(dim[1], dim[0], 3).to(device)
 
             for event in events:
-                _idx = event[0] + event[1] * dim[0]
-                seq[int(_idx)].append(event[2])
-                seq_lengths[int(_idx)] += 1
+                y = int(event[1])
+                x = int(event[0])
+                t = torch.tensor([[event[2]]]).to(device)
 
-            for idx in range(dim[0]*dim[1]):
-                if seq_lengths[idx] > 10: # TODO: change this
-                    data = torch.tensor(np.array(seq[idx])).view(-1, 1)
-                    len = seq_lengths[idx]
-                    
-                    _, _, input, output = model(data.unsqueeze(0).to(device), [len])
-                    
-                    real = input.view(1,-1).cpu().detach().numpy()[0]
-                    decoder = output.view(1,-1).cpu().detach().numpy()[0]
-                    
-                    print(real, decoder)
-                    plt.plot(real, label='real')
-                    plt.plot(decoder, label='decoder')
-                    plt.title('Real vs Decoder')
-                    plt.legend()
-                    plt.show()
-    
+                features[y][x] = encoder(t, features[y][x].unsqueeze(0)).squeeze()
+            
+            img = features.cpu().detach().numpy()
+
+            cv2.imshow('img', img)
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
+                cv2.destroyAllWindows()
+                exit()
+
 if __name__ == '__main__':
     args = parse_args()
     main(args)

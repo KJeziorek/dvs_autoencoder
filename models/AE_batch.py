@@ -4,7 +4,7 @@ import numpy as np
 import os
 
 class AutoEncoderBatch(nn.Module):
-    def __init__(self, input_size, hidden_size, batch_size, model, use_linear, use_activation, device, load_model=False):
+    def __init__(self, input_size, hidden_size, batch_size, model, use_linear, use_activation, device, load_model=False, dataset='gen1'):
         super(AutoEncoderBatch, self).__init__()
 
         self.device = device
@@ -34,15 +34,15 @@ class AutoEncoderBatch(nn.Module):
                                device=self.device).to(self.device)
         
         if load_model:
-            self.encoder.load_state_dict(torch.load(f'trained_models/encoder_{model}.pth'))
-            self.decoder.load_state_dict(torch.load(f'trained_models/decoder_{model}.pth'))
+            self.encoder.load_state_dict(torch.load(f'trained_models/encoder_{model}_{dataset}.pth'))
+            self.decoder.load_state_dict(torch.load(f'trained_models/decoder_{model}_{dataset}.pth'))
 
         self.loss = nn.MSELoss(reduction='none')
         self.reset_state()
 
     def forward(self, input, seq_lengths):
-        features = self.encoder(input, seq_lengths)
-        output = self.decoder(features, seq_lengths)
+        output_enc, features = self.encoder(input, seq_lengths)
+        output = self.decoder(output_enc, features)
         loss = self._loss_fun(input, output, seq_lengths)
         return loss, features, input, output
 
@@ -54,10 +54,10 @@ class AutoEncoderBatch(nn.Module):
         mse_loss = loss / mask.sum()
         return mse_loss
     
-    def save_models(self):
+    def save_models(self, name):
         os.makedirs('trained_models', exist_ok=True)
-        torch.save(self.encoder.state_dict(), f'trained_models/encoder_{self.model}.pth')
-        torch.save(self.decoder.state_dict(), f'trained_models/decoder_{self.model}.pth')
+        torch.save(self.encoder.state_dict(), f'trained_models/encoder_{self.model}_{name}.pth')
+        torch.save(self.decoder.state_dict(), f'trained_models/decoder_{self.model}_{name}.pth')
 
     def reset_state(self):
         self.encoder.reset_state()
@@ -77,9 +77,7 @@ class Encoder(nn.Module):
         self.input_size = input_size
         self.hidden_size = hidden_size
 
-        if self.model == 'lstm':
-            self.encoder = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size, batch_first=True)
-        elif self.model == 'gru':
+        if self.model == 'gru':
             self.encoder = nn.GRU(input_size=self.input_size, hidden_size=self.hidden_size, batch_first=True)
         elif self.model == 'rnn':
             self.encoder = nn.RNN(input_size=self.input_size, hidden_size=self.hidden_size, batch_first=True)
@@ -93,22 +91,17 @@ class Encoder(nn.Module):
         self.activation = nn.Sigmoid()  
 
     def forward(self, padded, seq_lengths):
+        
         packed = nn.utils.rnn.pack_padded_sequence(padded, seq_lengths, batch_first=True, enforce_sorted=False).to(self.device)
-        _, features = self.encoder(packed, self.hidden_state)
-
+        output, hidden_state = self.encoder(packed, self.hidden_state)
+        
         if self.use_linear:
-            if self.model == 'lstm':
-                features[0] = self.linear_enc(features[0])
-            else:
-                features = self.linear_enc(features)
-
+            hidden_state = self.linear_enc(hidden_state)
+        
         if self.use_activation:
-            if self.model == 'lstm':
-                features[0] = self.activation(features[0])
-            else:
-                features = self.activation(features)
-
-        return features
+            hidden_state = self.activation(hidden_state)
+        
+        return packed, hidden_state
     
     def reset_state(self):
         if self.model == 'lstm':
@@ -133,9 +126,9 @@ class Decoder(nn.Module):
         self.hidden_size = hidden_size
         self.output_size = input_size
 
-        if self.model == 'lstm':
-            self.decoder = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size, batch_first=False)
-        elif self.model == 'gru':
+        self.teacher_forcing = True
+
+        if self.model == 'gru':
             self.decoder = nn.GRU(input_size=self.input_size, hidden_size=self.hidden_size, batch_first=False)
         elif self.model == 'rnn':
             self.decoder = nn.RNN(input_size=self.input_size, hidden_size=self.hidden_size, batch_first=False)
@@ -150,16 +143,28 @@ class Decoder(nn.Module):
         self.use_activation = use_activation
         self.activation = nn.Sigmoid()  
 
-    def forward(self, features, seq_lengths):
+    def forward(self, input, hidden):
         output_vec = []
-        x = torch.zeros(1, self.batch_size, 1).to(self.device)
 
         if self.use_linear:
-            if self.model == 'lstm':
-                features[0] = self.linear_dec(features[0])
+            hidden = self.linear_dec(hidden)
+        
+        input = nn.utils.rnn.pad_packed_sequence(input, batch_first=False)[0]
 
-        for _ in range(max(seq_lengths)):
-            x, features = self.decoder(x, features)
+        in_data = input[0].unsqueeze(0)*0
+
+        x, hidden = self.decoder(in_data, hidden)
+        x = self.linear_out(x)
+        output_vec.append(x)
+        
+        for idx in range(0, input.shape[0]-1):
+
+            if self.teacher_forcing:
+                in_data = input[idx].unsqueeze(0)
+            else:
+                in_data = x
+
+            x, hidden = self.decoder(in_data, hidden)
             x = self.linear_out(x)
             output_vec.append(x)
 
