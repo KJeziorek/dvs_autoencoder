@@ -34,3 +34,7 @@ Data and code to extract from
   doi     = {10.1109/LRA.2021.3068942}
 }
 ```
+## Model
+
+train loss = 0.00130230
+test loss = 0.00187137
