@@ -38,3 +38,5 @@ Data and code to extract from
 
 train loss = 0.00130230
 test loss = 0.00187137
+
+![video](https://github.com/KJeziorek/dvs_autoencoder/assets/95488355/7c7b4f75-d267-4c8a-86e2-292ca642c12f)
